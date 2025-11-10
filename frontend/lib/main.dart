@@ -1,5 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package.flutter/material.dart';
 import 'package:dio/dio.dart';
+
+// ¡NUEVO! Definimos el Enum aquí en Dart,
+// debe coincidir con el 'enum' de Rust
+enum ServerType {
+  paper,
+  fabric,
+}
 
 void main() {
   runApp(const MineHostCompanionApp());
@@ -31,28 +38,45 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   // --- Estado de la UI ---
   String _serverStatus = "Presiona 'Status' para actualizar";
-  String _installStatus = ""; // ¡NUEVO! Para mostrar el estado de la instalación
+  String _installStatus = "";
   bool _isLoading = false;
+
+  // ¡NUEVO! Estado para los nuevos campos de instalación
+  ServerType _selectedServerType = ServerType.paper; // Valor por defecto
+  final _versionController = TextEditingController(text: "1.20.1"); // Controlador para el campo de texto
 
   final _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8000'));
 
+  // ¡NUEVO! Limpiamos el controlador cuando el widget se destruye
+  @override
+  void dispose() {
+    _versionController.dispose();
+    super.dispose();
+  }
+
   // --- Funciones de la API ---
 
-  // ¡NUEVO! Función para instalar el servidor
   Future<void> _installServer() async {
     setState(() {
       _isLoading = true;
-      _installStatus = "Instalando Paper 1.20.1...";
+      _installStatus = "Instalando ${_selectedServerType.name} ${_versionController.text}...";
     });
 
     try {
-      // Hacemos la llamada GET a /install
-      final response = await _dio.get('/install');
+      // ¡NUEVO! Preparamos el JSON para enviar
+      final Map<String, dynamic> requestData = {
+        // 'name' nos da el string "paper" o "fabric"
+        "tipo_servidor": _selectedServerType.name,
+        "version": _versionController.text,
+      };
+
+      // ¡NUEVO! Hacemos una petición POST con los datos
+      final response = await _dio.post('/install', data: requestData);
       
-      if (response.data['message'] == 'install_success') {
-        final String hash = response.data['hash'];
+      if (response.data['message'].contains('install_success')) {
+        final String hash = response.data['hash'] ?? ""; // Maneja si el hash es nulo
         setState(() {
-          _installStatus = "¡Instalación exitosa! Hash: ${hash.substring(0, 8)}...";
+          _installStatus = "¡Instalación exitosa! (${response.data['message']})";
           _isLoading = false;
         });
       } else {
@@ -62,15 +86,16 @@ class _DashboardPageState extends State<DashboardPage> {
         });
       }
     } catch (e) {
-      // Manejo de error si el backend no está corriendo
       setState(() {
         _installStatus = "Error: ¿Backend está apagado?";
         _isLoading = false;
       });
-      print(e); // Imprime el error real en la consola
+      print(e);
     }
   }
 
+  // ... (Las funciones _fetchStatus, _startServer, y _stopServer no cambian) ...
+  //region (Funciones sin cambios)
   Future<void> _fetchStatus() async {
     setState(() {
       _isLoading = true;
@@ -131,12 +156,11 @@ class _DashboardPageState extends State<DashboardPage> {
       print(e);
     }
   }
+  //endregion
 
   // --- UI (la parte visual) ---
   @override
   Widget build(BuildContext context) {
-    // Usamos 'SingleChildScrollView' para evitar que se desborde
-    // si la ventana es muy pequeña
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -150,31 +174,77 @@ class _DashboardPageState extends State<DashboardPage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
                 
-                // --- Sección de Instalación (¡NUEVA!) ---
+                // --- Sección de Instalación (¡MODIFICADA!) ---
                 const Text(
                   'Instalación del Servidor',
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.w300),
                 ),
-                const SizedBox(height: 10),
-                // Mostramos el texto de estado de la instalación
+                const SizedBox(height: 20),
+
+                // --- ¡NUEVO! Fila de Selección ---
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // --- ¡NUEVO! Dropdown de Tipo de Servidor ---
+                    // 'DropdownButton' para elegir el tipo
+                    DropdownButton<ServerType>(
+                      value: _selectedServerType,
+                      // 'onChanged' actualiza el estado cuando el usuario elige
+                      onChanged: (ServerType? newValue) {
+                        if (newValue != null) {
+                          setState(() {
+                            _selectedServerType = newValue;
+                          });
+                        }
+                      },
+                      // 'items' construye la lista de opciones
+                      items: ServerType.values.map((ServerType type) {
+                        return DropdownMenuItem<ServerType>(
+                          value: type,
+                          // 'name' nos da "paper" o "fabric"
+                          child: Text(type.name.toUpperCase()),
+                        );
+                      }).toList(),
+                    ),
+
+                    const SizedBox(width: 20),
+
+                    // --- ¡NUEVO! Campo de Texto de Versión ---
+                    // 'Expanded' toma el espacio restante
+                    Expanded(
+                      // 'TextFormField' es un campo de texto con validación
+                      child: TextFormField(
+                        controller: _versionController, // Conectamos el controlador
+                        decoration: const InputDecoration(
+                          labelText: 'Versión (ej: 1.20.1)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // --- Botón de Instalar ---
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.download),
+                  label: const Text('Instalar/Actualizar Servidor'),
+                  onPressed: _isLoading ? null : _installServer,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  ),
+                ),
+                
+                // Texto de estado de la instalación
                 if (_installStatus.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 10.0),
+                    padding: const EdgeInsets.only(top: 10.0),
                     child: Text(
                       _installStatus,
                       style: const TextStyle(fontSize: 16),
                       textAlign: TextAlign.center,
                     ),
                   ),
-                // Botón de Instalar
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.download),
-                  label: const Text('Instalar/Actualizar Paper 1.20.1'),
-                  onPressed: _isLoading ? null : _installServer,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  ),
-                ),
 
                 // --- Divisor ---
                 const Padding(
@@ -182,13 +252,13 @@ class _DashboardPageState extends State<DashboardPage> {
                   child: Divider(),
                 ),
 
-                // --- Sección de Control (la que ya teníamos) ---
+                // --- Sección de Control (sin cambios) ---
                 const Text(
                   'Estado del Servidor:',
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.w300),
                 ),
                 
-                if (_isLoading && _installStatus.isEmpty) // Solo mostrar si cargamos estado
+                if (_isLoading && _installStatus.isEmpty)
                   const Padding(
                     padding: EdgeInsets.all(16.0),
                     child: CircularProgressIndicator(),

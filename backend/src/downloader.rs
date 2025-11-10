@@ -8,6 +8,8 @@ use std::io::{Read, Write};
 
 use sha2::{Digest, Sha256}; 
 
+// --- 1. Structs de la API de PaperMC ---
+// (Este es tu código antiguo, ¡está perfecto!)
 #[derive(Deserialize)]
 struct PaperVersionResponse {
     builds: Vec<i32>,
@@ -29,6 +31,8 @@ struct PaperDownloadInfo {
     sha256: String,
 }
 
+// --- 2. Función de Descarga de Paper ---
+// (Esta es tu función antigua, ¡está perfecta!)
 pub async fn download_paper_server(
     client: &Client,
     version: &str,
@@ -37,6 +41,8 @@ pub async fn download_paper_server(
     
     println!("[Downloader] Iniciando descarga de PaperMC versión {}", version);
 
+    // ... (Todo el código de Paper se queda aquí, no lo borres) ...
+    
     let build_api_url = format!(
         "https://api.papermc.io/v2/projects/paper/versions/{}",
         version
@@ -123,5 +129,103 @@ pub async fn download_paper_server(
         
         Err("La verificación del hash falló. Archivo corrupto.".into())
     }
+}
+
+
+// --- 4. Structs de la API de Fabric (¡NUEVO!) ---
+// (Este es el código que te pedí que AÑADIERAS)
+
+#[derive(Deserialize)]
+struct FabricLoaderResponse {
+    // Buscamos la versión "estable"
+    #[serde(rename = "loader")] // El JSON usa "loader", no "stable_loader"
+    stable_loader: FabricVersion,
+}
+
+#[derive(Deserialize)]
+struct FabricVersion {
+    version: String, // ej: "0.15.11"
+}
+
+#[derive(Deserialize)]
+struct FabricInstallerResponse {
+    url: String, // La URL del .jar del instalador
+}
+
+// --- 5. Nueva Función Pública de Descarga (Fabric) (¡NUEVO!) ---
+// (Esta es la función que te pedí que AÑADIERAS)
+pub async fn download_fabric_installer(
+    client: &Client,
+    version: &str, // ej: "1.20.1"
+    save_path: &Path, // ej: "minecraft_server/fabric-installer.jar"
+) -> Result<(), Box<dyn Error>> {
     
+    println!("[Downloader] Iniciando descarga del INSTALADOR de Fabric {}", version);
+
+    // --- Paso A: Encontrar el último 'loader' estable ---
+    let loader_url = "https://meta.fabricmc.net/v2/versions/loader";
+    
+    // (Ajuste: la API devuelve una lista de objetos, no un objeto con 'loader')
+    // Leemos la respuesta como un Vec (lista) de structs
+    let loader_responses: Vec<FabricVersion> =
+        client.get(loader_url).send().await?.json().await?;
+
+    // Buscamos la primera versión estable en la lista
+    let loader_version = match loader_responses.iter().find(|v| v.version.contains("stable")) {
+         // (Simplificación: tomaremos la primera versión estable que encontremos)
+         // (En una app real, buscaríamos la más reciente. Esto es un ejemplo)
+         // (¡Corrección! La API de Fabric cambió. Vamos a simplificarlo
+         //  y tomar la última versión estable del "juego" que buscamos, no del loader.)
+        
+         // ¡NUEVO PLAN MÁS SIMPLE PARA FABRIC!
+         // 1. Obtener la última versión del loader para nuestra versión de juego
+         _ => {
+            // (Esta lógica es más compleja, vamos a simplificarla al máximo por ahora)
+            // (Usaremos una versión de loader 'hardcodeada' para este ejemplo
+            // y luego la haremos dinámica)
+            "0.15.11" // <--- ¡Valor de ejemplo!
+         }
+    };
+    
+    // (¡RE-CORRECCIÓN! La API de Fabric es más simple.
+    // Vamos a borrar esa lógica compleja. Mi código anterior estaba mal.)
+    
+    // --- BORRA EL CÓDIGO DE ARRIBA, USA ESTE ---
+    // (Ya lo he arreglado en este bloque de código)
+    
+    // --- Paso A: Encontrar el último 'loader' estable ---
+    // (Esta API es un poco diferente. Vamos a buscar el loader
+    //  estable para nuestra versión de juego)
+    
+    // ¡Ajuste! La API de Fabric es más simple.
+    // 1. Obtener el 'loader' estable más reciente para esa versión de MC
+    let loader_url = format!("https://meta.fabricmc.net/v2/versions/loader/{}/stable", version);
+    let loader_response: Vec<FabricLoaderResponse> = client.get(&loader_url).send().await?.json().await?;
+
+    let loader_version = &loader_response[0].stable_loader.version;
+
+    // --- Paso B: Encontrar la URL del instalador ---
+    let installer_url = format!(
+        "https://meta.fabricmc.net/v2/versions/installer/{}/{}",
+        version, loader_version
+    );
+    let installer_response: FabricInstallerResponse =
+        client.get(&installer_url).send().await?.json().await?;
+
+    let download_url = &installer_response.url;
+
+    // --- Paso C: Descargar y Guardar ---
+    println!("[Downloader] Descargando desde: {}", download_url);
+    let file_bytes = client.get(download_url).send().await?.bytes().await?;
+
+    if let Some(dir_path) = save_path.parent() {
+        create_dir_all(dir_path)?;
+    }
+
+    let mut file = StdFile::create(save_path)?;
+    file.write_all(&file_bytes)?;
+    
+    println!("[Downloader] ¡Instalador de Fabric descargado!");
+    
+    Ok(())
 }
